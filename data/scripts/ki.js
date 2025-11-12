@@ -90,22 +90,28 @@ function dijkstra(graph, startId, endId, trainVmax_kmh) {
 let stationData = [];
 
 async function loadStations() {
-  const res = await fetch('./data/DE_stations.json');
-  const js = await res.json();
-  if(js.elements) {
-    stationData = js.elements
-      .filter(el => el.type==="node" && el.tags && el.tags.name)
-      .map(el => ({
-        id: el.id,
-        lat: el.lat,
-        lon: el.lon,
-        name: el.tags.name,
-        ds100: el.tags["railway:ref"] || "",
-        display: el.tags["railway:ref"] || el.tags.name,
-        tags: el.tags
-      }));
-    addMessage(`✅ ${stationData.length} Betriebstellen in Deutschland geladen.`, 'bot');
-    addMessage(`Gebe eine Route ein. z.B.(RK nach TS über TBM um 13:00)`, 'bot')
+  try {
+    const res = await fetch('./data/DE_stations.json');
+    if (!res.ok) throw new Error(`HTTP-Fehler! Status: ${res.status}`);
+    const js = await res.json();
+    if(js.elements) {
+      stationData = js.elements
+        .filter(el => el.type==="node" && el.tags && el.tags.name)
+        .map(el => ({
+          id: el.id,
+          lat: el.lat,
+          lon: el.lon,
+          name: el.tags.name,
+          ds100: el.tags["railway:ref"] || "",
+          display: el.tags["railway:ref"] || el.tags.name,
+          tags: el.tags
+        }));
+      addMessage(`✅ ${stationData.length} Betriebstellen in Deutschland geladen.`, 'bot');
+      addMessage(`Gebe eine Route ein. z.B.(RK nach TS über TBM um 13:00 mit 160)`, 'bot')
+    }
+  } catch (error) {
+    console.error("Fehler beim Laden der Stationsdaten:", error);
+    addMessage("❌ Fehler: Die Stationsdaten konnten nicht geladen werden. Die Anwendung ist nicht funktionsfähig.", 'bot');
   }
 }
 
@@ -131,23 +137,51 @@ function bboxFromPoints(points, pad_km=15){
   return [minLat-padDeg,minLon-padDeg,maxLat+padDeg,maxLon+padDeg];
 }
 
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter'
+];
+
 async function fetchRailNetwork(bbox){
   const [s,w,n,e] = bbox;
   const q = `[out:json][timeout:60];(way["railway"~"^(rail|railway)$"](${s},${w},${n},${e}); >;); out body;`;
-  const url = 'https://overpass-api.de/api/interpreter';
-  const res = await fetch(url,{method:'POST',body:q,headers:{'Content-Type':'text/plain'}});
-  const js = await res.json();
-  const nodes = {}, ways = {};
-  for(const el of js.elements){
-    if(el.type==='node') nodes[el.id]={id:el.id,lat:el.lat,lon:el.lon};
-    if(el.type==='way') ways[el.id]=el;
+  const maxRetries = 2;
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        //addMessage(`Lade Netzwerkdaten... (Versuch ${attempt}/${maxRetries} von ${new URL(endpoint).hostname})`, 'bot');
+        const res = await fetch(endpoint, { method: 'POST', body: q, headers: { 'Content-Type': 'text/plain' } });
+        if (!res.ok) throw new Error(`HTTP-Status: ${res.status}`);
+        const js = await res.json();
+        // Wenn wir hier sind, war die Anfrage erfolgreich.
+        if (!js.elements || js.elements.length === 0) return { nodes: {}, ways: {} };
+        return buildNodesAndWaysFromElements(js.elements); // Aufbereiten und zurückgeben
+      } catch (error) {
+        console.warn(`Fehler bei Anfrage an ${new URL(endpoint).hostname} (Versuch ${attempt}):`, error.message);
+        if (attempt === maxRetries) continue; // Versuche den nächsten Server, wenn der letzte Versuch fehlschlägt
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Warte 1.5s vor dem nächsten Versuch
+      }
+    }
   }
-  return {nodes,ways};
+
+  // Wenn alle Endpunkte und Versuche fehlschlagen
+  throw new Error("Konnte keine Netzwerkdaten von den Overpass-Servern abrufen.");
+}
+
+function buildNodesAndWaysFromElements(elements) {
+  const nodes = {}, ways = {};
+  for (const el of elements) {
+    if (el.type === 'node') nodes[el.id] = { id: el.id, lat: el.lat, lon: el.lon };
+    if (el.type === 'way') ways[el.id] = el;
+  }
+  return { nodes, ways };
 }
 
 function buildGraph(nodes,ways){
   const graph={nodes:{},edges:{}};
-  for(const nid in nodes) graph.nodes[nid]=nodes[nid];
+  for(const nid in nodes) graph.nodes[nid] = { ...nodes[nid] };
 
   function addEdge(u,v,len,wayid,maxspeed){
     if(!graph.edges[u]) graph.edges[u]=[];
@@ -184,26 +218,36 @@ function findNearestNode(nodes,lat,lon){
 }
 
 async function computeRouteWithGraph(points,trainVmax){
-  let segmentResults=[],totalTimeSec=0,totalLen=0,fullPolyline=[];
+  // 1. Großen Graphen für die gesamte Route bauen
+  const bbox = bboxFromPoints(points, 25); // Größerer Puffer für die Gesamtroute
+  addMessage('Lade Gleisdaten für die gewünschte Route...', 'bot');
+  const { nodes, ways } = await fetchRailNetwork(bbox);
+  if (Object.keys(nodes).length === 0) {
+    throw new Error('Keine Schienendaten im ausgewählten Bereich gefunden.');
+  }
+  //addMessage('Netzwerkdaten geladen, baue Routen-Graph...', 'bot');
+  const graph = buildGraph(nodes, ways);
+  //addMessage('Graph erstellt, berechne die Abschnitte...', 'bot');
 
+  // 2. Pfade für einzelne Segmente auf dem großen Graphen berechnen
+  let segmentResults=[], totalTimeSec=0, totalLen=0, fullPolyline=[];
   for(let i=0;i<points.length-1;i++){
     const a=points[i], b=points[i+1];
-    const bbox = bboxFromPoints([a,b],12);
-    const net = await fetchRailNetwork(bbox);
-    const graph = buildGraph(net.nodes,net.ways);
-    const na=findNearestNode(net.nodes,a.lat,a.lon);
-    const nb=findNearestNode(net.nodes,b.lat,b.lon);
+
+    const na = findNearestNode(nodes, a.lat, a.lon);
+    const nb = findNearestNode(nodes, b.lat, b.lon);
     if(!na||!nb) throw new Error('Keine Schienendaten im Ausschnitt gefunden.');
+
     const res = dijkstra(graph,String(na.id),String(nb.id),trainVmax);
-    if(!res) throw new Error('Kein Pfad gefunden.');
+    if(!res) throw new Error(`Kein Pfad zwischen ${a.display} und ${b.display} gefunden.`);
 
     const segCoords = [];
-    let cur = String(na.id);
-    segCoords.push([net.nodes[cur].lat,net.nodes[cur].lon]);
     for(const step of res.path){
       const to = step.to;
-      segCoords.push([net.nodes[to].lat,net.nodes[to].lon]);
+      segCoords.push([nodes[to].lat, nodes[to].lon]);
     }
+    // Sicherstellen, dass der Startpunkt des Segments am Anfang steht
+    segCoords.unshift([nodes[na.id].lat, nodes[na.id].lon]);
 
     let segLen=0;
     for(let k=0;k<segCoords.length-1;k++)
@@ -212,6 +256,10 @@ async function computeRouteWithGraph(points,trainVmax){
     totalTimeSec+=res.time_s;
     totalLen+=segLen;
     fullPolyline.push(...segCoords);
+    // Entferne den letzten Punkt, wenn es nicht das letzte Segment ist, um Duplikate zu vermeiden
+    if (i < points.length - 2) {
+      fullPolyline.pop();
+    }
     segmentResults.push({from:a.display,to:b.display,time_s:res.time_s,len_m:segLen});
   }
 
@@ -221,44 +269,81 @@ async function computeRouteWithGraph(points,trainVmax){
 // -----------------------------
 // 🟢 Parsing Chat & Zwischenpunkte
 // -----------------------------
+
+// Globale Variable, um den Kontext der letzten Route zu speichern
+let lastRouteContext = {
+  from: null,
+  to: null,
+  via: [],
+  time: null,
+  vmax: 120
+};
 async function handleUserMessage(text){
   addMessage(text,'user');
 
   // Regex: von START nach ZIEL über P1 über P2 ... um HH:MM
-  const regex = /(\S+)\s+nach\s+(\S+)((?:\s+über\s+\S+)*)\s*(?:um\s+(\d{1,2}:\d{2}))?/i;
+  const regex = /(\S+)\s+nach\s+(\S+)((?:\s+über\s+\S+)*)\s*(?:um\s+(\d{1,2}:\d{2}))?\s*(?:mit\s+(\d+))?/i;
   const m = text.match(regex);
   if(!m){
-    addMessage("Bitte im Format 'RK nach TU über TBM über TS um 14:30' schreiben.",'bot'); 
-    return; 
-  }
+    // Wenn kein vollständiger Befehl, prüfe auf Kontext-Modifikatoren
+    const mitMatch = text.match(/mit\s+(\d+)/i);
+    const ueberMatch = text.match(/über\s+(\S+)/i);
+    const umMatch = text.match(/um\s+(\d{1,2}:\d{2})/i);
 
-  const [_, fromQ, toQ, viaStr, timeStr] = m;
-  const viaMatches = [...viaStr.matchAll(/\s+über\s+(\S+)/g)];
-  const viaPointsRaw = viaMatches.map(v=>v[1]);
-
-  function parseLocation(q){
-    const coordMatch = q.match(/^(\d+(\.\d+)?),(\d+(\.\d+)?)$/);
-    if(coordMatch){
-      return { lat: parseFloat(coordMatch[1]), lon: parseFloat(coordMatch[3]), display: q };
+    if (mitMatch || ueberMatch || umMatch) {
+      if (!lastRouteContext.from || !lastRouteContext.to) {
+        addMessage("Ich habe noch keinen Routenkontext. Bitte gib zuerst eine vollständige Route ein (z.B. 'A nach B').", 'bot');
+        return;
+      }
+      if (mitMatch) lastRouteContext.vmax = parseInt(mitMatch[1], 10);
+      if (umMatch) lastRouteContext.time = umMatch[1];
+      if (ueberMatch) {
+        const newVia = parseLocation(ueberMatch[1]);
+        if (newVia) {
+          lastRouteContext.via.push(newVia);
+        } else {
+          addMessage(`Zwischenpunkt '${ueberMatch[1]}' nicht gefunden.`, 'bot');
+          return;
+        }
+      }
+    } else {
+      addMessage("Ich habe das nicht verstanden. Bitte im Format 'A nach B über C mit 160' schreiben oder den Kontext anpassen ('mit 200', 'über X').", 'bot');
+      return;
     }
-    const station = findStation(q);
-    if(station) return station;
-    return null;
+  } else {
+    // Vollständiger Befehl wurde erkannt, Kontext neu aufbauen
+    const [_, fromQ, toQ, viaStr, timeStr, vmaxStr] = m;
+    const viaMatches = [...viaStr.matchAll(/\s+über\s+(\S+)/g)];
+    const viaPointsRaw = viaMatches.map(v => v[1]);
+
+    const fromStation = parseLocation(fromQ);
+    const toStation = parseLocation(toQ);
+    const viaPoints = viaPointsRaw.map(parseLocation);
+
+    if (!fromStation || !toStation || viaPoints.some(v => v === null)) {
+      addMessage("Ein Punkt konnte nicht gefunden werden. Prüfe DS100, Name oder Koordinaten.", 'bot');
+      return;
+    }
+
+    // Kontext aktualisieren
+    lastRouteContext = {
+      from: fromStation,
+      to: toStation,
+      via: viaPoints,
+      time: timeStr || null,
+      vmax: vmaxStr ? parseInt(vmaxStr, 10) : 120
+    };
   }
 
-  const fromStation = parseLocation(fromQ);
-  const toStation = parseLocation(toQ);
-  const viaPoints = viaPointsRaw.map(parseLocation);
+  const { from, to, via, time, vmax } = lastRouteContext;
+  const allPoints = [from, ...via, to];
 
-  if(!fromStation || !toStation || viaPoints.some(v=>v===null)){
-    addMessage("Ein Punkt konnte nicht gefunden werden. Prüfe DS100, Name oder Koordinaten.",'bot');
-    return;
+  let routeMsg = `Berechne Route von ${from.display} nach ${to.display}`;
+  if (via.length > 0) {
+    routeMsg += ` über ${via.map(p => p.display).join(', ')}`;
   }
-
-  const allPoints = [fromStation,...viaPoints,toStation];
-  const vmax = 120; //Vmax des Zuges
-
-  addMessage(`Berechne Route von ${fromStation.display} nach ${toStation.display} mit maximal ${vmax} km/h...`,'bot');
+  routeMsg += ` mit max. ${vmax} km/h.`;
+  addMessage(routeMsg, 'bot');
 
   try{
     routeLayer.clearLayers();
@@ -272,7 +357,7 @@ async function handleUserMessage(text){
     const res = await computeRouteWithGraph(allPoints,vmax);
 
     // Polyline auf der Hauptkarte
-    const poly = L.polyline(res.polyline,{weight:5,color:'blue'}).addTo(routeLayer);
+    const poly = L.polyline(res.polyline,{weight:3,color:'#020095ff'}).addTo(routeLayer);
     map.fitBounds(poly.getBounds(),{padding:[40,40]});
 
     // Mini-Map für mobile Ansicht
@@ -282,24 +367,34 @@ async function handleUserMessage(text){
 
     const total_h = Math.floor(res.totalTime_s/3600);
     const total_min = Math.round((res.totalTime_s%3600)/60);
-    let msg = `Route: ${(res.totalLen_m/1000).toFixed(1)} km — Fahrzeit: ${total_h}h ${total_min}min`;
-    if(timeStr){
-      const [hh,mm] = timeStr.split(':').map(Number);
+    let msg = `Route: ${(res.totalLen_m/1000).toFixed(1)} km — Fahrzeit: ${total_h}h ${total_min}min (bei ${vmax} km/h)`;
+    if(time){
+      const [hh,mm] = time.split(':').map(Number);
       const dep=new Date(); dep.setHours(hh,mm,0,0);
       const arr=new Date(dep.getTime()+res.totalTime_s*1000);
       msg += ` — Ankunft: ${arr.getHours()}:${arr.getMinutes().toString().padStart(2,'0')}`;
     }
 
-    if(viaPoints.length>0){
-      msg += `\nZwischenpunkte: ${viaPoints.map(v=>v.display).join(', ')}`;
+    if(via.length>0){
+      msg += `\nZwischenpunkte: ${via.map(v=>v.display).join(', ')}`;
     }
 
     addMessage(msg,'bot');
 
   } catch(err){
     console.error(err);
-    addMessage('Fehler bei der Berechnung, versuche es bitte erneut.','bot');
+    addMessage(`Fehler: ${err.message || 'Bei der Berechnung ist ein unbekannter Fehler aufgetreten.'}`,'bot');
   }
+}
+
+function parseLocation(q){
+  const coordMatch = q.match(/^(\d+(\.\d+)?),(\d+(\.\d+)?)$/);
+  if(coordMatch){
+    return { lat: parseFloat(coordMatch[1]), lon: parseFloat(coordMatch[3]), display: q };
+  }
+  const station = findStation(q);
+  if(station) return station;
+  return null;
 }
 
 // -----------------------------
@@ -321,7 +416,3 @@ loadStations();
 
 // Hinweis: kein await außerhalb async-Funktionen mehr nötig
 // Mini-Map wird nur innerhalb von handleUserMessage() erzeugt
-
-
-
-
