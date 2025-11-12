@@ -109,8 +109,7 @@
  }
 
  footer {
-  background: var(--primary);
-  backdrop-filter: blur(10px);
+  background: transparent;
   color: white;
  }
 
