@@ -2,157 +2,76 @@
 <html lang="de">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Rail Explorer – Changelog</title>
-  <link rel="icon" href="data/images/logos/logo.png" type="images/png">
-  <link rel="stylesheet" href="data/styles/info.css">
-  <style>
-    nav {
-      text-align: center;
-      padding: 10px;
-    }
-
-    nav a {
-      text-decoration: none;
-      padding: 10px;
-      margin-inline: 10px;
-      border-radius: 10px;
-      background: #2b7cff;
-      color: white;
-    }
-
-    nav a:hover {
-      background-color: #1a5edb;
-    }
-
-    li a {
-      color: black;
-    }
-
-    li a:hover {
-      color: blue;
-    }
-
-    /* Mobile Ansicht */
-    @media (max-width: 768px) {
-      nav {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
-        padding: 10px;
-      }
-
-      nav a {
-        margin: 0;
-      }
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rail Explorer</title>
+  <link rel="stylesheet" href="data/styles/start.css">
 </head>
 
 <body>
 
-  <header>
-    <img src="data/images/logos/logo.png" style="width: 10%; height: auto; border-radius: 50%;">
-    <h1>Highlights & Verbesserungen</h1>
-  </header>
+  <div class="app">
 
-  <main>
-    <section>
-      <nav>
-        <a href="#1.3.2">Version 1.3.2</a>
-        <a href="#1.4.1">Version 1.4.1</a>
-        <a href="#1.5">Version 1.5</a>
-        <a href="#1.5.1">Version 1.5.1</a>
-        <a href="#2.0">Version 2.0</a>
-      </nav>
-    </section>
+    <!-- Header -->
+    <header class="header">
+      <h1>Rail Explorer</h1>
+      <p>Infos &amp; Einstellungen</p>
+    </header>
 
-     <section>
-      <h3 style="font-size: 1.5em;" id="2.0">Version 2.0 | 11.11.2025</h3>
+    <!-- Content -->
+    <main class="content">
 
-      <h3>Version 2.0.1 | Chat-Bot</h3>
-      <ul>
-        <li>Mehr Zuverlässigkeit</li>
-        <li>Kontextverständnis</li>
-      </ul>
+      <!-- Primary Card -->
+      <div style="display: none;" class="card primary">
+        <div class="card-text">
+          <h2>Einstellungen</h2>
+          <p style="margin-bottom: 5px; margin-top: 10px;">Bald gibt es hier mehr Einzustellen</p>
+          <label class="switch" style="display: none;">
+            <input type="checkbox" id="darkmode-toggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
 
-      <h3>Neue Features</h3>
-      <ul>
-        <li>Neuer, übersichtlicherer Aufbau der seite.</li>
-        <li>Du kannst jetzt abkürzungen von <a href="finder.html">Betriebstellen</a> abrufen.</li>
-      </ul>
-      <h3>Fehlerbehebungen</h3>
-      <ul>
-        <li>Allgemeine Anpassungen von Design und Funktionalität.</li>
-        <li>Sonstige Fehlerbehebungen.</li>
-      </ul>
-    </section>
+      <!-- Secondary Card -->
+      <div class="card">
+        <div class="card-text">
+          <h2>Version</h2>
+          <p>Du nutzt <strong>Version 2.5.2 beta</strong> für iOS</p>
+        </div>
+      </div>
 
-    <section>
-      <h3 style="font-size: 1.5em;" id="1.5.1">Version 1.5.1 | 07.11.2025</h3>
-      <h3>Neue Features</h3>
-      <ul>
-        <li>Du kannst jetzt im <a href="main.html">Hauptprogramm</a> Bahnhöfe und Betriebsstellen in DE, AT und
-          CH<br>für deine Berechnung auswählen.</li>
-        <li>Neue Erfolgsseite nach dem Senden des Kontaktformulars.</li>
-      </ul>
-      <h3>Fehlerbehebungen</h3>
-      <ul>
-        <li>Allgemeine Anpassungen von Design und Funktionalität.</li>
-        <li>Sonstige Fehlerbehebungen.</li>
-      </ul>
-    </section>
+      <!-- Secondary Card -->
+      <div class="card">
+        <div class="card-text">
+          <h2>App-Update</h2>
+          <p>Du musst nix tun, die App ist immer automatisch auf dem neuesten Stand</p>
+        </div>
+      </div>
 
-    <section>
-      <h3 style="font-size: 1.5em;" id="1.5">Version 1.5 | 06.11.2025</h3>
-      <h3>Neue Features</h3>
-      <ul>
-        <li>Anpassungen für spätere integration neuer Funktionen</li>
-        <li>Android App Download hinzugefügt</li>
-      </ul>
-      <h3>Fehlerbehebungen</h3>
-      <ul>
-        <li>Bahnhöfe in Randgebieten Deutschlands hinzufügen</li>
-        <li>Allgemeine Anpassungen von Design und Funktionalität</li>
-        <li>Sonstige Fehlerbehebungen</li>
-      </ul>
-    </section>
+            <!-- Secondary Card -->
+      <div class="card">
+        <div class="card-text">
+          <h2>Android-App</h2>
+          <p>Hier kannst du die Android-App herunterladen</p>
+        </div>
+        <a href="https://median.co/share/pwxqrdx#apk" class="btn primary-btn">Zur Android-App</a>
+      </div>
 
-    <section>
-      <h3 style="font-size: 1.5em;" id="1.4.1">Version 1.4.1 | 05.11.2025</h3>
-      <h3>Neue Features</h3>
-      <ul>
-        <li>Design anpassungen der UI im Desktop Modus</li>
-        <li>Unterstützung für Bahnhöfe und Strecken in ganz Deutschland hinzugefügt</li>
-        <li>Korrektur von Verlinkungen</li>
-      </ul>
-    </section>
-    <section>
-      <h3 style="font-size: 1.5em;" id="1.3.2">Version 1.3.2 | 04.11.2025</h3>
-      <h3>Neue Features</h3>
-      <ul>
-        <li>Einführung des Fahrzeitenrechners für Baden-Württemberg</li>
-        <li>Berechnung von Routen und Fahrzeiten zwischen beliebigen Orten oder Bahnhöfen</li>
-        <li>Darstellung der Ergebnisse in Textform und auf einer interaktiven Karte</li>
-        <li>Optimiertes, übersichtliches Design für Desktop und mobile Geräte</li>
-      </ul>
+      <!-- Secondary Card -->
+      <div class="card">
+        <div class="card-text">
+          <h2>Kontakt</h2>
+          <p>Kontaktiere den Entwickler</p>
+        </div>
+        <a href="mailto:info@flowwebdesign.de" class="btn primary-btn">Mail senden</a>
+      </div>
 
-      <h3>Fehlerbehebungen</h3>
-      <ul>
-        <li>Allgemeine Stabilitätsverbesserungen</li>
-        <li>Kleinere Layoutanpassungen auf mobilen Geräten</li>
-        <li>Fehler in der Routendarstellung bei bestimmten Kombinationen behoben</li>
-      </ul>
+    </main>
 
-    </section>
-  </main>
+  </div>
 
-  <footer>
-    © 2025 Rail Explorer | Entwickelt von <a href="https://flowwebdesign.de">FlowWebDesign</a>
-  </footer>
-
-  <script src="data/scripts/lock.js"></script>
+  <script src="data/scripts/darkmode.js"></script>
 </body>
 
 </html>
